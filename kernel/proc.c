@@ -58,6 +58,15 @@ procinit(void)
   }
 }
 
+// initialize the USYSCALL pagetable
+#ifdef LAB_PGTBL
+void
+usyscall_init(struct proc *p)
+{
+  p->ushortcut->pid = p->pid;
+}
+#endif
+
 // Must be called with interrupts disabled,
 // to prevent race with process being moved
 // to a different CPU.
@@ -132,6 +141,16 @@ found:
     return 0;
   }
 
+  // Allocate a USYSCALL page.
+  #ifdef LAB_PGTBL
+  if((p->ushortcut = (struct usyscall *)kalloc()) == 0){
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+  usyscall_init(p);
+  #endif
+
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
   if(p->pagetable == 0){
@@ -202,6 +221,17 @@ proc_pagetable(struct proc *p)
     return 0;
   }
 
+  // map the USYSCALL page to share with kernel
+  #ifdef LAB_PGTBL
+  if(mappages(pagetable, USYSCALL, PGSIZE,
+              (uint64)(p->ushortcut), PTE_R | PTE_W | PTE_U) < 0){
+    uvmunmap(pagetable, TRAMPOLINE, 1, 0);
+    uvmunmap(pagetable, TRAPFRAME, 1, 0);
+    uvmfree(pagetable, 0);
+    return 0;
+  }
+  #endif
+
   return pagetable;
 }
 
@@ -212,6 +242,9 @@ proc_freepagetable(pagetable_t pagetable, uint64 sz)
 {
   uvmunmap(pagetable, TRAMPOLINE, 1, 0);
   uvmunmap(pagetable, TRAPFRAME, 1, 0);
+  #ifdef LAB_PGTBL
+  uvmunmap(pagetable, USYSCALL, 1, 0);
+  #endif
   uvmfree(pagetable, sz);
 }
 
